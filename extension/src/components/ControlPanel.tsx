@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 
-export default function ControlPanel({ addLog }: { addLog: (s: string) => void }) {
+export default function ControlPanel({ addLog, setCenter }: { addLog: (s: string) => void; setCenter: (c: { seqid: string; start: number; end: number } | undefined) => void }) {
   const [url, setUrl] = useState('http://localhost:8000/static/db_fd6d0b03e61841a28d4c53a0683bd452.sqlite')
   const [query, setQuery] = useState('SELECT seqid, start, end, attributes FROM features WHERE featuretype = "gene" LIMIT 10;')
 
@@ -17,7 +17,18 @@ export default function ControlPanel({ addLog }: { addLog: (s: string) => void }
       if (m.type === 'error') addLog('[worker:error] ' + m.text)
       if (m.type === 'ready') addLog('[worker] ready')
       if (m.type === 'opened') addLog('[worker] opened ' + m.url)
-      if (m.type === 'result') addLog('[worker] result: ' + JSON.stringify(m.rows))
+      if (m.type === 'result') {
+        addLog('[worker] result: ' + JSON.stringify(m.rows))
+        // pick first row to center JBrowseView
+        if (Array.isArray(m.rows) && m.rows.length > 0) {
+          const r = m.rows[0]
+          // attempt to map common fields
+          const seqid = r.seqid || r.chrom || r.chromosome || r.contig
+          const start = r.start || r.begin || r.pos || 0
+          const end = r.end || r.stop || (r.start ? r.start + 100 : 100)
+          setCenter({ seqid, start: Number(start), end: Number(end) })
+        }
+      }
     })
 
     // initialize (optional)

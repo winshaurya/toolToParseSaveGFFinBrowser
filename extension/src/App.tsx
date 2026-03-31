@@ -5,14 +5,15 @@ import JBrowseView from './components/JBrowseView'
 
 export default function App() {
   const [logs, setLogs] = useState<string[]>([])
+  const [center, setCenter] = useState<{ seqid: string; start: number; end: number } | undefined>(undefined)
   const addLog = (s: string) => setLogs(l => [...l, s])
 
   return (
     <div className="app">
       <div className="left">
-        <ControlPanel addLog={addLog} />
+        <ControlPanel addLog={addLog} setCenter={setCenter} />
         <div style={{ marginTop: 12 }}>
-          <JBrowseView />
+          <JBrowseView center={center} />
         </div>
       </div>
       <div className="right">
