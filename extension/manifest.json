@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Genomic Feature DB (Storytelling)",
+  "version": "0.1.0",
+  "description": "Chrome extension MVP: query sqlite-wasm over HTTP Range and visualize engine steps.",
+  "action": {
+    "default_title": "Genomic DB",
+    "default_popup": "index.html"
+  },
+  "permissions": ["storage"],
+  "host_permissions": ["http://localhost:8000/*"],
+  "web_accessible_resources": [
+    {
+      "resources": ["assets/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}
