@@ -6,17 +6,38 @@ let Sqlite3 = null
 let db = null
 
 async function init(sqliteWasmUrl) {
-  try {
-    // Attempt dynamic import (works when bundled)
-    Sqlite3 = await import('@sqlite.org/sqlite-wasm')
-    postMessage({ type: 'log', text: 'Imported sqlite-wasm module' })
-    const sqlite = await Sqlite3.initSqlJs({ locateFile: filename => filename })
-    postMessage({ type: 'log', text: 'Initialized sqlite-wasm runtime' })
-    return sqlite
-  } catch (e) {
-    postMessage({ type: 'error', text: 'Failed to import sqlite-wasm: ' + String(e) })
-    throw e
-  }
+    try {
+      // NOTE: Many sqlite-wasm distributions are not published on npm. If you have
+      // bundled sqlite-wasm, you can import it here. Otherwise follow the README
+      // to download the runtime files and load them via importScripts.
+      if (typeof importScripts === 'function' && sqliteWasmUrl) {
+        // Example pattern when using distribution files: importScripts('/sqlite/sqlite-asm.js')
+        try {
+          importScripts(sqliteWasmUrl)
+          postMessage({ type: 'log', text: 'Loaded sqlite-wasm via importScripts ' + sqliteWasmUrl })
+          // The global initializer name varies by distribution; user will update here.
+          // e.g. const sqlite = await initSqlJs({ locateFile: f => '/sqlite/' + f })
+          return { imported: true }
+        } catch (inner) {
+          postMessage({ type: 'log', text: 'importScripts failed: ' + String(inner) })
+        }
+      }
+
+      // Fallback: attempt dynamic import (works only when sqlite-wasm is bundled)
+      Sqlite3 = await import('@sqlite.org/sqlite-wasm').catch(() => null)
+      if (Sqlite3) {
+        postMessage({ type: 'log', text: 'Imported sqlite-wasm module' })
+        const sqlite = await Sqlite3.initSqlJs({ locateFile: filename => filename })
+        postMessage({ type: 'log', text: 'Initialized sqlite-wasm runtime' })
+        return sqlite
+      }
+
+      postMessage({ type: 'log', text: 'sqlite-wasm not available; worker will operate in simulated mode' })
+      return null
+    } catch (e) {
+      postMessage({ type: 'error', text: 'Failed to initialize sqlite-wasm: ' + String(e) })
+      throw e
+    }
 }
 
 // Keep a simple queue for exec requests
