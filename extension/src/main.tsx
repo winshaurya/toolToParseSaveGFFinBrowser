@@ -1,6 +1,9 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
-import './styles.css'
+import './index.css'
 
-createRoot(document.getElementById('root')!).render(<App />)
+const mount = document.getElementById('root') || document.createElement('div')
+if (!mount.parentElement) document.body.appendChild(mount)
+
+createRoot(mount).render(<App />)

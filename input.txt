@@ -1,0 +1,27 @@
+Peter's approach is highly methodical. Instead of dumping a massive codebase into a single AI and hoping for the best, he treats AI context windows like temporary RAM and text files on his disk like the hard drive. 
+
+Here is his exact playbook for planning and keeping a swarm of agents perfectly synced:
+
+### 1. The Markdown Handoff
+He rarely lets a single agent run endlessly. When one agent finishes a logical chunk of work, he forces it to summarize the important session details, decisions, and current state into a Markdown file (like `CLAUDE.md` or a custom spec file). When he spins up a *new* agent for the next step, it loads that specific Markdown file to pick up exactly where the last one left off. This creates a clean "baton pass" between agents without carrying over a messy, token-heavy history of previous chat logs.
+
+### 2. The Forced Planning Phase
+He strictly forbids agents from writing code right away. His core prompts usually include a rule like: *"Don't implement immediately. Always show me at least two implementation options before you start."*
+
+The workflow usually looks like this:
+* An agent explores the codebase and writes a detailed architectural plan into a Markdown file.
+* Peter (the human) reviews the document, adding comments, fixing logic, or making tweaks directly in the file.
+* A fresh agent reads the approved, finalized plan and starts actually writing the code. 
+
+### 3. Commanding vs. Asking
+To ensure his cross-agent plans are actually bulletproof, he never asks the AI open-ended questions like, "Did I miss any edge cases?" (Because AIs are people-pleasers and will usually just say, "No, your plan looks great!"). 
+
+Instead, he issues strict commands with hard numbers. He will tell the agent: *"Identify 7 edge cases I haven't considered in this authentication flow"* or *"Ask me 10 clarifying questions about this implementation plan."* This forces the agent to critically analyze the context and actually find flaws.
+
+### 4. Aggressive "Brain Flushing"
+He is a massive advocate for avoiding what he calls "context rot." If an agent gets stuck in a loop of failing tests or writing bad code, the context window becomes polluted with errors and bad logic. Instead of trying to argue with the AI to fix it, he simply runs a `/clear` command to wipe its short-term memory, points it back to the clean Markdown plan, and starts over. 
+
+### 5. Session Isolation and "Durable Notes"
+Within OpenClaw, he designed a system of "session isolation." Different agents run in completely walled-off environments (sessions) so they don't corrupt each other's active memory. He also built explicit commands that force an agent to write "durable notes" to the disk right before summarizing or shrinking its active context window, ensuring critical decisions aren't lost when the AI's memory is compacted.
+
+Basically, he treats AI agents like stateless microservices. They boot up, read the written plan, do their one specific job, update the documentation, and shut down.

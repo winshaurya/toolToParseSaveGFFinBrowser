@@ -1,24 +1,38 @@
-# Phase 1 — Python Preprocessor
+# Genomic Feature DB In-Browser — Project README
 
-This component converts GFF3 files into a gffutils-backed SQLite DB and exposes a small FastAPI service to convert remote GFFs and serve the resulting SQLite files via `/static` (StaticFiles).
+This repository implements a proof-of-concept pipeline to query large GFF3 genome annotation files entirely in the browser using SQLite compiled to WebAssembly and an HTTP VFS that issues Range requests to a hosted `.sqlite` file.
 
-Quick start
+Structure
+- `app/` — FastAPI application that accepts GFF URLs, converts them to SQLite using `gffutils`, and serves resulting `.sqlite` files with byte-range (`Accept-Ranges`) support.
+- `src/` — Python scripts: `preprocessor.py` conversion utility, small runners and tests.
+- `extension/` — Vite + React scaffold for the Chrome extension UI (Storytelling Dashboard). Includes a `wasmWorker.js` placeholder for sqlite-wasm integration, `ControlPanel`, `VisualLog`, and a mock `JBrowseView`.
 
-1. Create a virtualenv and install dependencies:
+How it works (high level)
+1. Backend: convert GFF -> SQLite using `gffutils.create_db` and store in `static/`.
+2. Serve `.sqlite` from FastAPI with byte-range support so WASM's HTTP VFS can request only the necessary pages.
+3. Extension UI: user provides DB URL + query. The UI animates the engine steps: generated SQL, HTTP Range requests, WASM execution, and result rows.
+4. Handoff: the extension demonstrates centering a mock genome browser (JBrowseView) using returned coordinates.
 
-```bash
+Dev quickstart
+
+Backend (Python):
+
+```powershell
+cd "c:\Users\mrsha\Desktop\killinit\New folder (3)"
 python -m venv .venv
-source .venv/bin/activate   # on Windows: .venv\Scripts\activate
+.venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-2. Run the FastAPI app (development):
-
-```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-3. POST a JSON body to `/convert` with `gff_url` to start conversion. The response returns a `sqlite_url` under `/static` where the generated DB will appear once ready.
+Extension (frontend):
+
+```bash
+cd extension
+npm install
+npm run dev
+```
 
 Notes
-- The static endpoint uses Starlette's StaticFiles which supports `Accept-Ranges: bytes` so the file can be read via HTTP range requests from the browser or SQLite WASM HTTP VFS.
+- `extension/src/wasmWorker.js` currently contains a simulated worker and a stubbed sqlite-wasm initialization. To enable real queries, install `@sqlite.org/sqlite-wasm` and replace simulation with real HTTP-VFS mounting per the sqlite-wasm docs.
+- Pushing to remote: this repo attempts to push but you may need to provide credentials or use an SSH key.

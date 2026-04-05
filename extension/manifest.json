@@ -4,14 +4,28 @@
   "version": "0.1.0",
   "description": "Chrome extension MVP: query sqlite-wasm over HTTP Range and visualize engine steps.",
   "action": {
-    "default_title": "Genomic DB",
-    "default_popup": "index.html"
+    "default_title": "Genomic DB"
   },
-  "permissions": ["storage"],
+  "side_panel": {
+    "default_path": "dist/index.html"
+  },
+  "permissions": ["storage", "sidePanel"],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "commands": {
+    "_execute_side_panel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+B",
+        "mac": "Command+Shift+B"
+      },
+      "description": "Toggle side panel"
+    }
+  },
   "host_permissions": ["http://localhost:8000/*"],
   "web_accessible_resources": [
     {
-      "resources": ["assets/*"],
+      "resources": ["dist/assets/*", "assets/*"],
       "matches": ["<all_urls>"]
     }
   ]

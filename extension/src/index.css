@@ -1,0 +1,37 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Minimal global resets — visual styles are applied via Tailwind classes */
+html, body, #root { height: 100%; margin: 0; }
+body { -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale; }
+  --muted: #8b7d74;
+
+/* Mobile-frame: lock UI to phone aspect ratio and prevent horizontal swipes */
+.mobile-frame {
+  width: 375px;
+  height: 812px;
+  max-width: 100%;
+  max-height: 100vh;
+  margin: 12px auto;
+  border-radius: 12px;
+  overflow-x: hidden;
+  overflow-y: hidden; /* inner panels handle their own scrolling */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background: var(--bg, #fff);
+}
+
+/* Ensure internal scrollable areas allow vertical scrolling */
+.mobile-frame .MuiPaper-root,
+.mobile-frame .MuiBox-root {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent page-level pinch/zoom on mobile hosts (index.html also sets viewport) */
+html, body { overscroll-behavior: none; }

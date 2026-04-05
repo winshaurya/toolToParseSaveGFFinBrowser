@@ -1,0 +1,55 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Genomic Feature DB — Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin:0; padding:0; width:420px; height:600px; }
+    .container { display:flex; height:100vh; }
+    .left { width:40%; padding:10px; box-sizing:border-box; border-right:1px solid #ddd; background:#f7f7f8; }
+    .right { flex:1; background:#0b1220; color:#d9e2ec; padding:10px; box-sizing:border-box; }
+    .input { width:100%; padding:8px; margin-bottom:8px; box-sizing:border-box; }
+    .btn { width:100%; padding:8px; margin-bottom:8px; }
+    .terminal { background:#020617; color:#cbd5e1; padding:8px; height:100%; overflow:auto; font-family: monospace; border-radius:6px; }
+    .log-line { margin:2px 0; }
+    .small { font-size:12px; color:#9aa4b2; }
+    h3 { margin:0 0 8px 0; color:#111; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="left">
+      <h3>Controls</h3>
+      <label class="small">GFF or SQLite URL</label>
+      <input id="url" class="input" type="text" placeholder="http://localhost:8000/db.sqlite">
+      <label class="small">Query (gene/feature)</label>
+      <input id="query" class="input" type="text" placeholder="geneX">
+      <button id="run" class="btn">Run Query</button>
+      <button id="parse" class="btn">Parse GFF (in-memory)</button>
+      <p class="small">This demo simulates WASM Range requests and engine steps.</p>
+    </div>
+    <div class="right">
+      <h3 style="margin-top:0;color:#fff">Engine View</h3>
+      <div id="terminal" class="terminal" role="log" aria-live="polite"></div>
+      <div style="margin-top:8px;color:#fff;display:flex;align-items:center;gap:12px;">
+        <div>
+          <div class="small">Parsed features:</div>
+          <div id="count" style="font-weight:700;font-size:18px;color:#9ae6b4">0</div>
+        </div>
+        <div id="figurine-area" style="flex:1;">
+          <svg id="figurine" width="240" height="36" viewBox="0 0 240 36">
+            <rect x="0" y="14" width="240" height="8" rx="4" fill="#22333b"></rect>
+            <g id="worker" transform="translate(0,0)">
+              <circle cx="12" cy="18" r="10" fill="#ffb703"></circle>
+              <rect x="6" y="22" width="12" height="6" rx="2" fill="#fb8500"></rect>
+            </g>
+          </svg>
+        </div>
+      </div>
+      <div id="features_list" style="margin-top:8px;max-height:160px;overflow:auto;background:#071021;padding:6px;border-radius:6px"></div>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

@@ -8,6 +8,19 @@ Quick dev:
 2. npm install
 3. npm run dev
 
+Tailwind setup (dev):
+
+1. In the `extension` folder, install Tailwind dev deps:
+
+```bash
+npm install -D tailwindcss postcss autoprefixer
+npx tailwindcss init -p
+```
+
+2. Ensure `tailwind.config.cjs` and `postcss.config.cjs` exist (provided in repo). Import `src/index.css` from the app entry so Tailwind utilities are available.
+
+3. Run `npm run dev` (Vite will process Tailwind via PostCSS).
+
 Load `index.html` as the extension popup during development (pack/unpack or use build outputs).
 
 Notes:

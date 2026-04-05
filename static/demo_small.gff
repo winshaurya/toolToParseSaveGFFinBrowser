@@ -1,3 +1,0 @@
-##gff-version 3
-chr1	source	gene	100	200	.	+	.	ID=gene0;Name=TestGene
-chr1	source	mRNA	120	190	.	+	.	ID=mrna0;Parent=gene0

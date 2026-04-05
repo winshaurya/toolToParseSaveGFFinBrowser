@@ -5,3 +5,4 @@ __pycache__/
 static/*.sqlite
 env/
 dist/
+extension/node_modules/

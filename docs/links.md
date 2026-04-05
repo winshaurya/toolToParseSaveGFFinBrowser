@@ -9,3 +9,7 @@ SQLite WASM HTTP VFS docs (Phase 3 reference):
 
 JBrowse 2 Plugin docs (Phase 4):
 - https://jbrowse.org/jb2/docs/developer_guide/
+
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+
