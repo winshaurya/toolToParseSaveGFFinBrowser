@@ -6,7 +6,7 @@
 
 hi i wrote this project to explore how i can run sql queries against large genome-annotation files entirely in the browser, without shipping a database server for every query. this repo shows a lightweight pipeline: parse gff -> create a single sqlite file -> serve it with http range support -> query it from a browser using sqlite compiled to wasm.
 
-![what it looks like](image.png) - what it looks like
+![what it looks like](./image.png)
 
 ## overview
 
