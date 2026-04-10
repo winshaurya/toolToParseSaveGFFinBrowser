@@ -1,5 +1,7 @@
 import React, { useState } from 'react'
-import '../index.css'
+import '../cd extension
+npm ci
+npm run build.css'
 
 export default function ControlPanel({ addLog, setCenter }: { addLog: (s: any) => void; setCenter: (c: { seqid: string; start: number; end: number } | undefined) => void }) {
   const [url, setUrl] = useState('http://localhost:8000/static/db_fd6d0b03e61841a28d4c53a0683bd452.sqlite')
@@ -45,7 +47,8 @@ export default function ControlPanel({ addLog, setCenter }: { addLog: (s: any) =
     }
 
     addLog({ type: 'info', text: 'Spawning wasm worker...' })
-    const worker = new Worker('/src/wasmWorker.js')
+    // Load worker from public path so it is available in production builds
+    const worker = new Worker('/wasmWorker.js')
     worker.addEventListener('message', (ev) => {
       const m = ev.data
       if (m.type === 'log') addLog({ type: 'info', text: m.text })

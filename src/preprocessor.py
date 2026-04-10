@@ -1,68 +1,196 @@
 import os
-import shutil
 import tempfile
-import uuid
 from pathlib import Path
+from typing import Optional
 
-import gffutils
+from .build_db import build_database
 
 
-def convert_gff_to_sqlite(gff_input: str, sqlite_path: str) -> str:
-    """Convert a local or remote GFF3 to a SQLite DB using gffutils.
+def convert_gff_to_sqlite(
+    gff_input: str,
+    sqlite_path: str,
+    batch_size: int = 20000,
+    fast: bool = False,
+    with_rtree: bool = False,
+    with_fts: bool = False,
+    encoding: str = "utf-8",
+) -> str:
+    """Convert a local or remote GFF3 to a deterministic SQLite DB using the project's
+    streaming `build_database` pipeline.
 
-    gff_input: local path or URL
-    sqlite_path: destination sqlite file path
-    Returns the sqlite_path on success.
+    Keeps the previous behavior of downloading remote GFFs to a temporary file,
+    then calls `build_database` to create a canonical `features`/`attributes` schema.
     """
     Path(os.path.dirname(sqlite_path)).mkdir(parents=True, exist_ok=True)
 
-    # If input is a URL, download to a temp file first with retries/backoff
-    if gff_input.startswith("http://") or gff_input.startswith("https://"):
-        import httpx
+    downloaded_tmp: Optional[str] = None
+    if gff_input.startswith(("http://", "https://", "ftp://", "ftps://")):
         import time
+        import urllib.request
+        import urllib.parse
+        import shutil
+        import httpx
+        import zlib
 
         tmp_fd, tmp_path = tempfile.mkstemp(suffix=".gff")
         os.close(tmp_fd)
+        downloaded_tmp = tmp_path
 
         max_attempts = 5
         backoff = 1.0
+        # support FTP/FTPS via urllib (falls back to HTTP variants) and
+        # support HTTPS with optional insecure fallback when TLS verification fails
         for attempt in range(1, max_attempts + 1):
             try:
-                with httpx.stream("GET", gff_input, follow_redirects=True, timeout=60.0) as r:
-                    r.raise_for_status()
-                    with open(tmp_path, "wb") as out_f:
-                        for chunk in r.iter_bytes():
-                            if chunk:
-                                out_f.write(chunk)
-                # success
+                parsed = urllib.parse.urlparse(gff_input)
+                scheme = (parsed.scheme or "").lower()
+
+                # FTP-style access using urllib.request which supports ftp:// URLs
+                if scheme in ("ftp", "ftps"):
+                    with urllib.request.urlopen(gff_input, timeout=60) as resp:
+                        with open(tmp_path, "wb") as out_f:
+                            shutil.copyfileobj(resp, out_f)
+
+                    # detect gzip by magic
+                    with open(tmp_path, "rb") as fcheck:
+                        head = fcheck.read(2)
+                        if head == b"\x1f\x8b" and not tmp_path.endswith('.gz'):
+                            gz_path = tmp_path + ".gz"
+                            try:
+                                os.replace(tmp_path, gz_path)
+                                downloaded_tmp = gz_path
+                                input_path = gz_path
+                            except Exception:
+                                input_path = tmp_path
+                        else:
+                            input_path = tmp_path
+
+                    break
+
+                # HTTP/HTTPS handling
+                is_gzip = False
+                # attempt normal TLS-verified request first
+                try_urls = [gff_input]
+                # if initial is https, allow trying http fallback as well
+                if gff_input.startswith('https://'):
+                    try_urls.append('http://' + gff_input[len('https://'):])
+
+                success = False
+                for url_try in try_urls:
+                    try:
+                        with httpx.stream("GET", url_try, follow_redirects=True, timeout=60.0) as r:
+                            r.raise_for_status()
+                            content_encoding = (r.headers.get("content-encoding") or "").lower()
+                            url_path = r.url.path or ""
+                            if "gzip" in content_encoding or url_path.endswith(".gz") or url_path.endswith(".gff.gz"):
+                                is_gzip = True
+
+                            first = True
+                            with open(tmp_path, "wb") as out_f:
+                                for chunk in r.iter_bytes():
+                                    if not chunk:
+                                        continue
+                                    if first:
+                                        first = False
+                                        try:
+                                            if chunk[:2] == b"\x1f\x8b":
+                                                is_gzip = True
+                                        except Exception:
+                                            pass
+                                    out_f.write(chunk)
+
+                        # rename if gzip
+                        if is_gzip and not tmp_path.endswith(".gz"):
+                            gz_path = tmp_path + ".gz"
+                            try:
+                                os.replace(tmp_path, gz_path)
+                                downloaded_tmp = gz_path
+                                input_path = gz_path
+                            except Exception:
+                                input_path = tmp_path
+                        else:
+                            input_path = tmp_path
+
+                        success = True
+                        break
+                    except httpx.ConnectError as ce:
+                        msg = str(ce).lower()
+                        # TLS/hostname issues: try insecure fallback once
+                        if ("certificate verify failed" in msg or "ssl" in msg or "hostname" in msg) and url_try.startswith('https://'):
+                            try:
+                                with httpx.stream("GET", url_try, follow_redirects=True, timeout=60.0, verify=False) as r:
+                                    r.raise_for_status()
+                                    content_encoding = (r.headers.get("content-encoding") or "").lower()
+                                    url_path = r.url.path or ""
+                                    if "gzip" in content_encoding or url_path.endswith(".gz") or url_path.endswith(".gff.gz"):
+                                        is_gzip = True
+                                    first = True
+                                    with open(tmp_path, "wb") as out_f:
+                                        for chunk in r.iter_bytes():
+                                            if not chunk:
+                                                continue
+                                            if first:
+                                                first = False
+                                                try:
+                                                    if chunk[:2] == b"\x1f\x8b":
+                                                        is_gzip = True
+                                                except Exception:
+                                                    pass
+                                            out_f.write(chunk)
+
+                                if is_gzip and not tmp_path.endswith(".gz"):
+                                    gz_path = tmp_path + ".gz"
+                                    try:
+                                        os.replace(tmp_path, gz_path)
+                                        downloaded_tmp = gz_path
+                                        input_path = gz_path
+                                    except Exception:
+                                        input_path = tmp_path
+                                else:
+                                    input_path = tmp_path
+
+                                success = True
+                                break
+                            except Exception:
+                                # fall through to retry logic
+                                pass
+                        # otherwise fall through and try next url_try
+                    except Exception:
+                        # try next fallback (http) or retry
+                        pass
+
+                if not success:
+                    # final error if none of the attempts worked
+                    raise RuntimeError(f"Failed to download GFF from {gff_input}")
+
                 break
-            except Exception as e:
+            except Exception:
                 if attempt == max_attempts:
-                    # re-raise the last exception
                     raise
                 time.sleep(backoff)
                 backoff *= 2
     else:
-        tmp_path = gff_input
+        input_path = gff_input
 
-    # gffutils.create_db will create a sqlite DB optimized for querying
     try:
-        # If sqlite exists, remove it to force recreation
         if os.path.exists(sqlite_path):
             os.remove(sqlite_path)
 
-        gffutils.create_db(
-            data=tmp_path,
-            dbfn=sqlite_path,
-            force=True,
-            keep_order=True,
-            disable_infer_transcripts=True,
+        build_database(
+            input_path=input_path,
+            output_path=sqlite_path,
+            batch_size=batch_size,
+            fast=fast,
+            with_rtree=with_rtree,
+            with_fts=with_fts,
+            encoding=encoding,
         )
-
     finally:
-        # If we downloaded to a temp file but conversion failed, cleanup
-        # Note: we cannot remove the temp file here unconditionally because gffutils needs it during create_db
-        pass
+        if downloaded_tmp and os.path.exists(downloaded_tmp):
+            try:
+                os.remove(downloaded_tmp)
+            except Exception:
+                pass
 
     return sqlite_path
 

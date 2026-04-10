@@ -1,23 +1,9 @@
 /*
- sqlite_wasm_loader.js
+ sqlite_wasm_loader.js (extension copy)
 
- Core browser-side SQLite (WASM) loader and secure query API.
-
- Usage:
-  - Provide `initSqlJs` from the `sql.js` package or let the module dynamically
-    import `sql.js` when available.
-
- Example:
-   import { WasmSqliteDB } from './src/wasm/sqlite_wasm_loader.js';
-   const loader = new WasmSqliteDB({ wasmURL: '/sql-wasm.wasm' });
-   await loader.init();
-   await loader.loadDatabaseFromUrl('/data/features.db');
-   const rows = await loader.queryFeatures({ seqid: 'chr1', start: 1000, end: 2000, attributeName: 'Name' });
-
- Notes:
-  - This module uses prepared statements with positional parameters to avoid
-    SQL injection. Do not interpolate user input into SQL strings.
-  - It aggregates joined rows into feature objects with `attributes` arrays.
+ This is a copy of the workspace-level loader placed inside the extension
+ so that bundlers (Vite) resolve `sql.js` from the extension's node_modules
+ during build. Keep in sync with the root copy at `src/wasm/sqlite_wasm_loader.js`.
 */
 
 export class WasmSqliteDB {
@@ -37,7 +23,6 @@ export class WasmSqliteDB {
         // Try dynamic import of sql.js; consumer can also pass initSqlJs
         try {
           const mod = await import('sql.js');
-          // sql.js packaging varies: support named or default exports
           if (typeof mod.initSqlJs === 'function') {
             this.initSqlJs = mod.initSqlJs;
           } else if (typeof mod.default === 'function') {
@@ -54,14 +39,14 @@ export class WasmSqliteDB {
         this.initSqlJs = initFn;
       }
 
-      // Attempt to fetch the WASM binary from configured local locations.
-      // For production we prefer a local deployed copy (this.wasmURL) or
-      // a package-installed copy. Hardcoded public CDN URLs were removed
-      // to avoid implicit external dependencies; add explicit fallbacks if needed.
+      // Attempt to fetch the WASM binary from several likely locations and
+      // fall back to using `locateFile` if we cannot fetch the binary.
       let wasmBinary = null;
       const candidates = [
         this.wasmURL,
-        '/node_modules/sql.js/dist/sql-wasm.wasm'
+        '/node_modules/sql.js/dist/sql-wasm.wasm',
+        'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.wasm',
+        'https://unpkg.com/sql.js@1.8.0/dist/sql-wasm.wasm'
       ];
       for (const candidate of candidates) {
         try {
@@ -114,12 +99,9 @@ export class WasmSqliteDB {
     if (typeof seqid !== 'string') throw new TypeError('seqid must be a string');
     if (typeof start !== 'number' || typeof end !== 'number') throw new TypeError('start/end must be numbers');
 
-    // Build SQL with positional placeholders (?) and a deterministic parameter order.
     let sql;
     let params = [];
     if (attributeName) {
-      // Select only features that have at least one attribute with `attributeName`.
-      // We still left-join `attributes a` to return all attributes for each feature.
       sql = `
         SELECT f.id AS fid, s.name AS seqname, f.source, f.type, f.start, f.end, f.length, f.score, f.strand, f.phase,
                a.key AS attr_key, a.value AS attr_value
@@ -146,7 +128,6 @@ export class WasmSqliteDB {
 
     if (limit && Number.isInteger(limit) && limit > 0) {
       sql += ' LIMIT ' + Number(limit);
-      // limit appended directly; it is a number controlled by caller code, not interpolated from free text
     }
 
     const stmt = this.db.prepare(sql);

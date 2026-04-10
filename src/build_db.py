@@ -92,51 +92,66 @@ def parse_gff_lines(fh: IO[str]) -> Iterable[Tuple[int, str, str, str, int, int,
         score = None if score_s == "." else _to_float(score_s)
         attr_pairs = parse_attributes(attr_str)
         yield lineno, seqid, source, typ, start, end, score, strand, phase, attr_pairs, attr_str
-
-
 def init_schema(conn: sqlite3.Connection) -> None:
-    cur = conn.cursor()
-    cur.execute("PRAGMA foreign_keys = ON;")
-    cur.execute(
+        cur = conn.cursor()
+        cur.execute("PRAGMA foreign_keys = ON;")
+
+        cur.execute(
+                """
+        CREATE TABLE IF NOT EXISTS seqnames (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE
+        );
         """
-    CREATE TABLE IF NOT EXISTS seqnames (
-      id INTEGER PRIMARY KEY,
-      name TEXT NOT NULL UNIQUE
-    );
-    """
-    )
-    cur.execute(
+        )
+
+        cur.execute(
+                """
+        CREATE TABLE IF NOT EXISTS features (
+            id INTEGER PRIMARY KEY,
+            seqname_id INTEGER NOT NULL,
+            source TEXT,
+            type TEXT,
+            start INTEGER NOT NULL,
+            end INTEGER NOT NULL,
+            length INTEGER,
+            score REAL,
+            strand TEXT,
+            phase TEXT,
+            gff_id TEXT,
+            raw_attributes TEXT,
+            gff_line INTEGER,
+            FOREIGN KEY(seqname_id) REFERENCES seqnames(id) ON DELETE CASCADE
+        );
         """
-    CREATE TABLE IF NOT EXISTS features (
-      id INTEGER PRIMARY KEY,
-      seqname_id INTEGER NOT NULL,
-      source TEXT,
-      type TEXT,
-      start INTEGER NOT NULL,
-      end INTEGER NOT NULL,
-      length INTEGER,
-      score REAL,
-      strand TEXT,
-      phase TEXT,
-      raw_attributes TEXT,
-      gff_line INTEGER,
-      FOREIGN KEY(seqname_id) REFERENCES seqnames(id) ON DELETE CASCADE
-    );
-    """
-    )
-    cur.execute(
+        )
+
+        cur.execute(
+                """
+        CREATE TABLE IF NOT EXISTS attributes (
+            id INTEGER PRIMARY KEY,
+            feature_id INTEGER NOT NULL,
+            key TEXT NOT NULL COLLATE NOCASE,
+            value TEXT,
+            value_norm TEXT,
+            FOREIGN KEY(feature_id) REFERENCES features(id) ON DELETE CASCADE
+        );
         """
-    CREATE TABLE IF NOT EXISTS attributes (
-      id INTEGER PRIMARY KEY,
-      feature_id INTEGER NOT NULL,
-      key TEXT NOT NULL COLLATE NOCASE,
-      value TEXT,
-      value_norm TEXT,
-      FOREIGN KEY(feature_id) REFERENCES features(id) ON DELETE CASCADE
-    );
-    """
-    )
-    conn.commit()
+        )
+
+        # parent relationship table: many-to-many mapping of child -> parent feature ids
+        cur.execute(
+                """
+        CREATE TABLE IF NOT EXISTS feature_parents (
+            feature_id INTEGER NOT NULL,
+            parent_feature_id INTEGER NOT NULL,
+            FOREIGN KEY(feature_id) REFERENCES features(id) ON DELETE CASCADE,
+            FOREIGN KEY(parent_feature_id) REFERENCES features(id) ON DELETE CASCADE
+        );
+        """
+        )
+
+        conn.commit()
 
 
 def get_or_create_seqname_id(conn: sqlite3.Connection, cache: Dict[str, int], seqname: str) -> int:
@@ -155,7 +170,7 @@ def bulk_insert(conn: sqlite3.Connection, feature_rows: Sequence[Tuple], attribu
     cur = conn.cursor()
     if feature_rows:
         cur.executemany(
-            "INSERT INTO features (id, seqname_id, source, type, start, end, length, score, strand, phase, raw_attributes, gff_line) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO features (id, seqname_id, source, type, start, end, length, score, strand, phase, gff_id, raw_attributes, gff_line) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             feature_rows,
         )
     if attribute_rows:
@@ -172,10 +187,13 @@ def create_indexes(conn: sqlite3.Connection) -> None:
     cur.execute("CREATE INDEX IF NOT EXISTS idx_features_seq_end_start ON features (seqname_id, end, start);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_features_seq_type_start_end ON features (seqname_id, type, start, end);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_features_cover_seq_start_end_type ON features (seqname_id, start, end, type);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_features_gff_id ON features (gff_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_attributes_key_value_feature ON attributes (key, value, feature_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_attributes_feature_key_value ON attributes (feature_id, key, value);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_attributes_key_value_norm_feature ON attributes (key, value_norm, feature_id);")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_attributes_feature_id ON attributes (feature_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_parents_feature ON feature_parents (feature_id);")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_feature_parents_parent ON feature_parents (parent_feature_id);")
     conn.commit()
 
 
@@ -268,6 +286,8 @@ def build_database(
     seq_cache: Dict[str, int] = {}
     features_batch: List[Tuple] = []
     attributes_batch: List[Tuple] = []
+    pending_parent_pairs: List[Tuple[int, str]] = []
+    gffid_to_id: Dict[str, int] = {}
     next_feature_id = 1
     total_features = 0
     total_attributes = 0
@@ -277,8 +297,37 @@ def build_database(
         for lineno, seqid, source, typ, start, end, score, strand, phase, attr_pairs, raw_attr in parse_gff_lines(fh):
             seqname_id = get_or_create_seqname_id(conn, seq_cache, seqid)
             length = end - start + 1
-            feature_row = (next_feature_id, seqname_id, source, typ, start, end, length, score, strand, phase, raw_attr, lineno)
+
+            # extract ID and Parent attributes for later resolution
+            gff_id_val: Optional[str] = None
+            for k, v in attr_pairs:
+                lk = k.lower() if k else ""
+                if lk == "id" and v:
+                    gff_id_val = v
+                elif lk == "parent" and v:
+                    # record child feature numeric id -> parent gff id (resolve later)
+                    pending_parent_pairs.append((next_feature_id, v))
+
+            feature_row = (
+                next_feature_id,
+                seqname_id,
+                source,
+                typ,
+                start,
+                end,
+                length,
+                score,
+                strand,
+                phase,
+                gff_id_val,
+                raw_attr,
+                lineno,
+            )
             features_batch.append(feature_row)
+
+            # map gff id to numeric id for fast resolution when possible
+            if gff_id_val:
+                gffid_to_id[gff_id_val] = next_feature_id
 
             for k, v in attr_pairs:
                 value_norm = v.lower() if v else None
@@ -298,6 +347,23 @@ def build_database(
     # final batch
     if features_batch or attributes_batch:
         bulk_insert(conn, features_batch, attributes_batch)
+
+    # resolve Parent relationships: pending_parent_pairs contains (child_id, parent_gff_id)
+    if pending_parent_pairs:
+        print(f"Resolving {len(pending_parent_pairs)} parent links...")
+        cur = conn.cursor()
+        resolved = []
+        for child_id, parent_gff in pending_parent_pairs:
+            parent_id = gffid_to_id.get(parent_gff)
+            if parent_id is None:
+                row = conn.execute("SELECT id FROM features WHERE gff_id = ?", (parent_gff,)).fetchone()
+                if row:
+                    parent_id = int(row[0])
+            if parent_id is not None:
+                resolved.append((child_id, parent_id))
+        if resolved:
+            cur.executemany("INSERT INTO feature_parents (feature_id, parent_feature_id) VALUES (?,?)", resolved)
+            conn.commit()
 
     print(f"Feature ingestion complete: {total_features} features, {total_attributes} attributes")
 

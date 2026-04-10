@@ -1,31 +1,40 @@
-from src.preprocessor import convert_gff_to_sqlite
-import sqlite3
-from pathlib import Path
-
-gff_text = """##gff-version 3
-chr1	source	gene	100	200	.	+	.	ID=gene0;Name=TestGene
-chr1	source	mRNA	120	190	.	+	.	ID=mrna0;Parent=gene0
+#!/usr/bin/env python3
 """
+Utility wrapper to convert a local GFF/GFF3 file to a SQLite database.
+This script intentionally does not create demo files; it requires explicit
+input and output paths and forwards options to `convert_gff_to_sqlite`.
+"""
+from src.preprocessor import convert_gff_to_sqlite
+import argparse
+import sys
 
-gff_file = Path("static/demo_small.gff")
-gff_file.parent.mkdir(exist_ok=True)
-gff_file.write_text(gff_text)
 
-out = "static/demo_small.sqlite"
-print("Converting local demo gff to:", out)
-convert_gff_to_sqlite(str(gff_file), out)
+def main():
+    p = argparse.ArgumentParser(description="Convert a local GFF/GFF3 file to SQLite")
+    p.add_argument("gff", help="Path to local GFF/GFF3 file")
+    p.add_argument("out", help="Output sqlite path (e.g. static/mydb.sqlite)")
+    p.add_argument("--batch-size", type=int, default=20000, help="Batch size for inserts")
+    p.add_argument("--fast", action="store_true", help="Use faster PRAGMA settings")
+    p.add_argument("--with-rtree", action="store_true", help="Populate RTREE index")
+    p.add_argument("--with-fts", action="store_true", help="Populate FTS5 index")
+    p.add_argument("--encoding", default="utf-8", help="File encoding")
+    args = p.parse_args()
 
-conn = sqlite3.connect(out)
-cur = conn.cursor()
-cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
-tables = cur.fetchall()
-print("Tables in demo DB:", tables)
+    try:
+        out_path = convert_gff_to_sqlite(
+            args.gff,
+            args.out,
+            batch_size=args.batch_size,
+            fast=args.fast,
+            with_rtree=args.with_rtree,
+            with_fts=args.with_fts,
+            encoding=args.encoding,
+        )
+        print("Wrote:", out_path)
+    except Exception as e:
+        print("Conversion failed:", e, file=sys.stderr)
+        sys.exit(1)
 
-# sample query to show feature count
-try:
-    cur.execute("SELECT COUNT(*) FROM features")
-    print("features count:", cur.fetchone())
-except Exception as e:
-    print("Couldn't query 'features' table directly:", e)
 
-conn.close()
+if __name__ == "__main__":
+    main()

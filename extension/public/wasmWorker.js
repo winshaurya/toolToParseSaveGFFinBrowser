@@ -1,8 +1,7 @@
-// wasmWorker: attempt to initialize sqlite-wasm runtime and register HTTP VFS.
-// The worker will try to load local runtime files from `/sqlite/` (served from
-// extension/public/sqlite/) and then fall back to CDN candidates. If the
-// runtime or the HTTP VFS plugin is unavailable the worker will continue in
-// simulated mode so the UI remains usable.
+// wasmWorker (public copy)
+// Copied into /public so Vite will copy it to dist root and the extension can
+// load it at runtime via a simple Worker('/wasmWorker.js') call without
+// Vite attempting to bundle it as a module worker.
 
 let sqliteRuntime = null
 let db = null
@@ -24,7 +23,6 @@ async function tryImportScripts(candidates) {
 
 async function init(sqliteWasmUrl) {
   try {
-    // Try to load a small bootstrapper or the runtime directly from /sqlite/ (public)
     const localCandidates = [
       '/sqlite/worker-bootstrap.js',
       '/sqlite/sqlite-wasm.js',
@@ -33,14 +31,12 @@ async function init(sqliteWasmUrl) {
     ]
     await tryImportScripts(localCandidates)
 
-    // Fallback to popular CDN locations for sql.js (useful for quick dev)
     const cdnCandidates = [
       'https://cdn.jsdelivr.net/npm/sql.js@1.8.0/dist/sql-wasm.js',
       'https://unpkg.com/sql.js@1.8.0/dist/sql-wasm.js'
     ]
     await tryImportScripts(cdnCandidates)
 
-    // Try dynamic import of an npm package if available in the bundle
     let imported = null
     try {
       imported = await import('sql.js')
@@ -48,7 +44,6 @@ async function init(sqliteWasmUrl) {
       imported = null
     }
 
-    // Determine initializer function exposed by whichever runtime we loaded.
     const initCandidates = [
       globalThis.initSqlJs,
       globalThis.init_sql_js,
@@ -72,30 +67,22 @@ async function init(sqliteWasmUrl) {
       return null
     }
 
-    // Initialize runtime and point locateFile to /sqlite/
     const config = { locateFile: (f) => '/sqlite/' + f }
     sqliteRuntime = await initFn(config)
     postMessage({ type: 'log', text: 'sqlite runtime initialized' })
 
-    // Try to register HTTP VFS if available. Different distributions expose
-    // different registration helpers; try the common ones.
     try {
-      // Prefer the sqlite-wasm-http package which provides a higher-level
-      // HTTP backend and worker-friendly APIs. If available, use it to create
-      // an HTTP backend and a SQLite worker thread.
       try {
         const httpModule = await import('sqlite-wasm-http')
         if (httpModule && typeof httpModule.createHttpBackend === 'function') {
           postMessage({ type: 'log', text: 'sqlite-wasm-http module found, creating HTTP backend' })
           const httpBackend = await httpModule.createHttpBackend({ timeout: 15000 })
-          // create a worker thread that uses the HTTP backend
           const sqliteThread = await httpModule.createSQLiteThread({ http: httpBackend })
-          // store thread on sqliteRuntime for reuse via a small adapter
           sqliteRuntime._thread = sqliteThread
           vfsHttpRegistered = true
         }
       } catch (e) {
-        // sqlite-wasm-http not available; continue to other registration methods
+        // sqlite-wasm-http not available; continue
       }
 
       if (typeof sqliteRuntime.register_vfs_http === 'function') {
@@ -105,7 +92,6 @@ async function init(sqliteWasmUrl) {
         await sqliteRuntime.vfs_http.register(sqliteRuntime)
         vfsHttpRegistered = true
       } else if (typeof sqliteRuntime.register_vfs === 'function') {
-        // some runtimes accept a name + factory
         try {
           await sqliteRuntime.register_vfs('http', {})
           vfsHttpRegistered = true
@@ -128,7 +114,6 @@ async function init(sqliteWasmUrl) {
 }
 
 function rowsFromExec(execRes) {
-  // execRes is an array of {columns, values}
   if (!execRes || execRes.length === 0) return []
   const out = []
   for (const block of execRes) {
@@ -158,11 +143,7 @@ self.addEventListener('message', async (ev) => {
         return
       }
 
-      // If HTTP VFS is registered and runtime exposes a helper to open via VFS,
-      // attempt that. Otherwise fall back to fetching the full DB and opening
-      // it in-memory (non-streaming).
       try {
-        // If a sqlite-wasm-http thread exists, use it to open via HTTP VFS
         if (sqliteRuntime && sqliteRuntime._thread) {
           try {
             const thread = sqliteRuntime._thread
@@ -175,14 +156,12 @@ self.addEventListener('message', async (ev) => {
           }
         }
 
-        // preferred API: open remote DB via runtime helper
         if (vfsHttpRegistered && sqliteRuntime && typeof sqliteRuntime.open === 'function') {
           db = await sqliteRuntime.open(url)
           postMessage({ type: 'opened', url })
           return
         }
 
-        // Fallback: fetch full DB bytes and create Database instance
         if (sqliteRuntime && typeof sqliteRuntime.Database === 'function') {
           const r = await fetch(url)
           if (!r.ok) throw new Error('HTTP ' + r.status)
@@ -206,8 +185,6 @@ self.addEventListener('message', async (ev) => {
         return
       }
       try {
-        // If db is a thread function provided by sqlite-wasm-http, use its
-        // promise-based exec API. Otherwise use synchronous db.exec.
         if (typeof db === 'function') {
           const thread = db
           const rows = []
@@ -238,4 +215,3 @@ self.addEventListener('message', async (ev) => {
     postMessage({ type: 'error', text: String(err) })
   }
 })
-
