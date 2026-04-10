@@ -1,8 +1,4 @@
- ____________________________________________
- /                                            \
-|   genomic feature db in-browser             |
-|   sqlite + wasm proof-of-concept            |
- \____________________________________________/
+
 
 hi i wrote this project to explore how i can run sql queries against large genome-annotation files entirely in the browser, without shipping a database server for every query. this repo shows a lightweight pipeline: parse gff -> create a single sqlite file -> serve it with http range support -> query it from a browser using sqlite compiled to wasm.
 
@@ -98,19 +94,4 @@ npm install
 npm run dev
 ```
 
-## notes & limitations
 
-- gff files vary a lot. attributes keys are not standardized across all sources; multi-parent relationships and complex feature graphs can be tricky to flatten.
-- converting a very large gff results in a large sqlite file. http-range helps but initial metadata reads may still fetch multiple pages.
-- sqlite-wasm is powerful but limited by browser memory and single-threaded wasm constraints; heavy analytic workloads may still be better on a server.
-- the current `extension/src/wasmworker.js` is a stub. to enable real sqlite-wasm behavior, install `@sqlite.org/sqlite-wasm` and replace the stub with the wasm module and http-vfs mount.
-
-## next steps i can do for you
-
-- add a separate `docs/gff-deep-dive.md` with example gff->sqlite schema and sample queries
-- add example gff files and a small integration test that runs the conversion scripts and verifies the sqlite schema
-- wire up real `@sqlite.org/sqlite-wasm` in the extension worker and demonstrate a live query to a hosted sqlite file
-
-if you want me to commit this change or open a branch/PR, tell me and i'll do it next.
-
-thanks — i kept everything lowercase as requested and left the screenshot in place.
